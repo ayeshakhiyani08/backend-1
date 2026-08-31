@@ -8,7 +8,7 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     role: {
       type: String,
-      enum: ['customer', 'agent'],
+      enum: ['customer', 'agent', 'admin'],
       required: true,
       default: 'customer',
     },
@@ -49,6 +49,13 @@ userSchema.statics.seedDefaultUsers = async function seedDefaultUsers() {
       password: 'Agent123!',
       role: 'agent',
       phone: '+923004445566',
+    },
+    {
+      name: 'Ops Admin',
+      email: 'admin@supportflow.com',
+      password: 'Admin123!',
+      role: 'admin',
+      phone: '+923006667788',
     },
   ];
 

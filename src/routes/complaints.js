@@ -36,6 +36,10 @@ const canAccessTicket = (user, complaint) => {
     return false;
   }
 
+  if (user.role === 'admin') {
+    return true;
+  }
+
   if (user.role === 'customer') {
     return complaint.customerId?.toString() === user._id.toString();
   }
@@ -150,6 +154,15 @@ const determineAgent = (category = 'General Support', priority = 'Medium') => {
   return agentMap[category]?.[priority] || 'Support Desk';
 };
 
+const getAutoAssignment = (subject = '', description = '', requestedPriority = 'Medium') => {
+  const text = `${subject} ${description}`.toLowerCase();
+  const category = determineCategory(text);
+  const priority = ['Low', 'Medium', 'High', 'Critical'].includes(requestedPriority) ? requestedPriority : determinePriority(text);
+  const assignedTo = determineAgent(category, priority);
+
+  return { category, priority, assignedTo };
+};
+
 const determineSentiment = (text = '') => {
   const lowerText = text.toLowerCase();
 
@@ -202,8 +215,8 @@ router.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'SupportFlow API', uptime: process.uptime() });
 });
 
-router.get('/dashboard', async (req, res) => {
-  const complaints = await Complaint.find().sort({ createdAt: -1 });
+router.get('/dashboard', protect, async (req, res) => {
+  const complaints = await Complaint.find(req.user.role === 'customer' ? { customerId: req.user._id } : {}).sort({ createdAt: -1 });
 
   const metrics = {
     total: complaints.length,
@@ -232,12 +245,48 @@ router.get('/dashboard', async (req, res) => {
   res.json({ metrics, queue, recentActivity });
 });
 
+router.get('/admin/dashboard', protect, requireRole('admin'), async (req, res) => {
+  const complaints = await Complaint.find().sort({ createdAt: -1 });
+  const metrics = {
+    total: complaints.length,
+    critical: complaints.filter((item) => item.priority === 'Critical').length,
+    pending: complaints.filter((item) => item.status === 'Pending').length,
+    inProgress: complaints.filter((item) => ['Accepted', 'In Progress'].includes(item.status)).length,
+    resolved: complaints.filter((item) => item.status === 'Completed').length,
+  };
+
+  res.json({ metrics, queue: complaints.slice(0, 8).map((item) => ({
+    id: item._id,
+    customer: item.customerName,
+    subject: item.subject,
+    priority: item.priority,
+    status: item.status,
+    assignedTo: item.assignedTo,
+    updatedAt: item.updatedAt,
+  })), recentActivity: complaints.slice(0, 5).map((item) => ({
+    id: item._id,
+    title: `${item.customerName} • ${item.subject}`,
+    description: item.aiSummary || item.description,
+    time: new Date(item.updatedAt).toLocaleString(),
+  })) });
+});
+
 router.get('/complaints', protect, async (req, res) => {
   const query = req.user.role === 'customer'
     ? { customerId: req.user._id }
-    : {};
+    : req.user.role === 'admin'
+      ? {}
+      : {};
 
   const complaints = await Complaint.find(query).sort({ createdAt: -1 });
+  res.json(complaints.map((item) => ({
+    ...item.toObject(),
+    statusLabel: item.status,
+  })));
+});
+
+router.get('/admin/complaints', protect, requireRole('admin'), async (req, res) => {
+  const complaints = await Complaint.find().sort({ createdAt: -1 });
   res.json(complaints.map((item) => ({
     ...item.toObject(),
     statusLabel: item.status,
@@ -264,11 +313,12 @@ router.post('/customer/complaints', protect, requireRole('customer'), async (req
   }
 
   const complaintText = String(complaint).trim();
-  const category = determineCategory(`${title} ${complaintText}`);
-  const normalizedPriority = priority || determinePriority(`${title} ${complaintText}`);
+  const autoAssignment = getAutoAssignment(String(title).trim(), complaintText, priority || 'Medium');
+  const category = autoAssignment.category;
+  const normalizedPriority = autoAssignment.priority;
   const sentiment = determineSentiment(`${title} ${complaintText}`);
   const ticketNumber = await generateTicketCode();
-  const assignedAgent = determineAgent(category, normalizedPriority);
+  const assignedAgent = autoAssignment.assignedTo;
   const aiSuggestion = analyzeComplaintWithAI({ title, complaint: complaintText });
 
   const newComplaint = await Complaint.create({
@@ -280,21 +330,21 @@ router.post('/customer/complaints', protect, requireRole('customer'), async (req
     complaint: complaintText,
     address: String(address || '').trim(),
     image: image || '',
-    category: aiSuggestion.category,
-    priority: aiSuggestion.priority,
+    category: aiSuggestion.category || category,
+    priority: aiSuggestion.priority || normalizedPriority,
     status: 'Pending',
     decision: 'Pending',
     assignedTo: assignedAgent,
     agentName: assignedAgent,
     aiSuggestion: {
-      category: aiSuggestion.category,
-      priority: aiSuggestion.priority,
+      category: aiSuggestion.category || category,
+      priority: aiSuggestion.priority || normalizedPriority,
       summary: aiSuggestion.summary,
     },
-    aiSummary: buildSummary({ subject: String(title).trim(), description: complaintText, category: aiSuggestion.category, priority: aiSuggestion.priority, customerName: req.user.name, agent: assignedAgent }),
+    aiSummary: buildSummary({ subject: String(title).trim(), description: complaintText, category: aiSuggestion.category || category, priority: aiSuggestion.priority || normalizedPriority, customerName: req.user.name, agent: assignedAgent }),
     sentiment,
     subject: String(title).trim(),
-    slaHours: aiSuggestion.priority === 'High' ? 12 : aiSuggestion.priority === 'Medium' ? 24 : 48,
+    slaHours: (aiSuggestion.priority || normalizedPriority) === 'High' ? 12 : (aiSuggestion.priority || normalizedPriority) === 'Medium' ? 24 : 48,
   });
 
   emitTicketEvent(req, 'new-ticket', {

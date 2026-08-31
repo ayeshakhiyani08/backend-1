@@ -54,8 +54,8 @@ router.post('/register', async (req, res) => {
   }
 
   const normalizedRole = String(role).toLowerCase();
-  if (!['customer', 'agent'].includes(normalizedRole)) {
-    return res.status(400).json({ message: 'Role must be customer or agent.' });
+  if (!['customer', 'agent', 'admin'].includes(normalizedRole)) {
+    return res.status(400).json({ message: 'Role must be customer, agent, or admin.' });
   }
 
   const existingUser = await User.findOne({ email: String(email).toLowerCase(), role: normalizedRole });

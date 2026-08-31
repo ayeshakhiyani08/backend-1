@@ -1,18 +1,29 @@
 # SupportFlow Backend
 
-SupportFlow backend is the API layer for a customer complaint management system with AI triage, role-based access, ticket lifecycle handling, and real-time updates.
+SupportFlow backend is the API layer for the SupportFlow complaint management platform. It handles authentication, customer and agent ticket workflows, AI-style triage suggestions, role-based access control, messaging, and real-time updates.
+
+## Overview
+
+This backend powers the operational side of the product:
+
+- customer ticket creation and viewing
+- agent queue management and triage decisions
+- status changes and resolution notes
+- admin visibility across tickets
+- real-time notifications with Socket.IO
+- persistent MongoDB storage
 
 ## Features
 
-- JWT authentication with bcrypt password hashing
-- Customer and agent role-based authorization
-- Complaint creation, tracking, and status transitions
-- AI triage suggestions based on complaint content
-- Agent accept/reject/complete decision handling
-- Ticket messaging and chat threads
-- MongoDB persistence with Mongoose ORM
-- Socket.IO live notifications for ticket activity
-- Email-ready support utilities
+- JWT authentication with secure password hashing
+- Role-based access for customer, agent, and admin
+- Ticket creation, filtering, assignment, and lifecycle updates
+- AI triage suggestions for category, priority, and summary
+- Human review before finalizing ticket metadata
+- Message threads for customer-agent communication
+- Socket.IO live event broadcasts for ticket updates
+- MongoDB storage with Mongoose models
+- Seeded demo users and sample complaint data
 
 ## Tech Stack
 
@@ -23,6 +34,7 @@ SupportFlow backend is the API layer for a customer complaint management system 
 - bcryptjs
 - Socket.IO
 - Nodemailer
+- dotenv
 
 ## Project Structure
 
@@ -42,28 +54,21 @@ src/
   server.js
 ```
 
-## Local Setup
+## Prerequisites
 
-1. Install dependencies:
+- Node.js 18+
+- MongoDB Atlas URI or local MongoDB instance
+- Optional: SMTP credentials for notifications
 
-```bash
-npm install
-```
+## Environment Setup
 
-2. Copy the environment file example:
-
-```bash
-cp .env.example .env
-```
-
-3. Update the variables in `.env`:
+Create a `.env` file in this folder:
 
 ```env
 PORT=5001
 MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/supportflow
 JWT_SECRET=supportflow-dev-secret-change-me
-CLIENT_URL=http://localhost:5175
-OPENAI_API_KEY=
+CLIENT_URL=http://localhost:5174
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
@@ -71,65 +76,101 @@ SMTP_PASS=
 SMTP_FROM=supportflow@noreply.local
 ```
 
-4. Start the backend in development mode:
+Notes:
+- If `MONGODB_URI` is not provided, the app automatically falls back to an in-memory MongoDB instance for local development.
+- Keep secrets outside the repo and never expose them in frontend code.
+
+## Installation
+
+```bash
+npm install
+```
+
+## Run Locally
+
+Development mode:
 
 ```bash
 npm run dev
+```
+
+Production mode:
+
+```bash
+npm start
 ```
 
 The API will run at:
 
 - http://localhost:5001
 
-## Production Start
+## Demo Accounts
 
-```bash
-npm start
-```
+These accounts are seeded automatically when the server starts:
 
-## Scripts
-
-```bash
-npm run dev   # start with nodemon
-npm start     # start production server
-```
+- Customer: `customer@supportflow.com` / `Customer123!`
+- Agent: `agent@supportflow.com` / `Agent123!`
+- Admin: `admin@supportflow.com` / `Admin123!`
 
 ## API Overview
 
-### Auth APIs
+### Authentication
 
 - `POST /api/auth/login`
 - `POST /api/auth/register`
 - `GET /api/auth/me`
 
-### Customer APIs
+### Customer
 
 - `GET /api/customer/tickets`
 - `POST /api/customer/complaints`
 
-### Agent APIs
+### Agent
 
 - `GET /api/agent/tickets`
 - `PATCH /api/complaints/:id/decision`
 - `PATCH /api/complaints/:id/status`
 
-### Messaging APIs
+### Messaging and Ticket Details
 
 - `GET /api/complaints/:id/messages`
 - `POST /api/complaints/:id/messages`
+- `PATCH /api/complaints/:id/review`
+- `PATCH /api/complaints/:id/cancel`
 
-## Demo Accounts
+### Admin
 
-- Customer: `customer@supportflow.com` / `Customer123!`
-- Agent: `agent@supportflow.com` / `Agent123!`
+- `GET /api/admin/dashboard`
+- `GET /api/admin/complaints`
+
+## Real-Time Events
+
+Socket.IO is used for live updates including:
+
+- new-ticket
+- ticket-accepted
+- ticket-rejected
+- status-updated
+- new-message
+- ticket-completed
+- ticket-reviewed
+
+## Business Rules Enforced
+
+- only authenticated users can access protected routes
+- customers can only view their own complaints
+- agents can update only assigned tickets
+- resolved tickets cannot be changed via the normal workflow unless reopened
+- priority values are validated before storing
+- AI suggestions are reviewed by a human before being finalized
 
 ## Security Notes
 
-- Never commit `.env` files.
-- Keep JWT secrets private.
-- MongoDB credentials and any AI keys must remain in server-side configuration only.
-- Customer and agent permission checks are enforced in the backend routes.
+- Never commit `.env` files
+- Keep JWT secrets private
+- Never place API keys or secrets in frontend code
+- Authorization checks are enforced on the server side
 
 ## Notes
 
-This backend is designed to work with the SupportFlow frontend that runs on the Vite app in the sibling `apps/web` folder.
+This backend is designed to work with the SupportFlow frontend located in the sibling `apps/web` folder.

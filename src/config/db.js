@@ -12,6 +12,10 @@ export const connectDB = async () => {
     return;
   }
 
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('MONGODB_URI is required in production. Set your Railway MongoDB Atlas connection string.');
+  }
+
   memoryServer = await MongoMemoryServer.create({
     binary: { version: '7.0.14' },
   });
